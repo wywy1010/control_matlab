@@ -1,0 +1,68 @@
+%% 1. 시스템 하드웨어 파라미터 정의 (사용자 확정 값)
+G = 21;             % 기어비
+Kt = 0.062;         % 토크 상수 [Nm/A]
+Kb = 0.062;         % 역기전력 상수 [V/(rad/s)]
+J = 0.005;          % 총 등가 관성 [kg*m^2]
+
+%% 2. 제어 목표 사양 및 변수 역산
+Ts_target = 0.1;    % 목표 정착 시간 (0.1초)
+zeta_target = 1.0;  % 목표 감쇠비 (임계 감쇠, %OS = 0%)
+
+% 임계 감쇠(Zeta=1)에서의 정착 시간 공식을 이용한 wn 도출 (Ts = 5.83 / wn)
+wn = 5.83 / Ts_target; 
+
+% 파라미터 K, R 역산 (D = 0 조건으로 보수적 설계)
+K = J * (wn^2); 
+R = (G^2 * Kt * Kb) / (2 * zeta_target * wn * J);
+
+fprintf('================= 설계된 파라미터 =================\n');
+fprintf('스프링 강성 (K) : %.4f [Nm/rad]\n', K);
+fprintf('모터 내부 저항 (R): %.4f [Ohm]\n', R);
+fprintf('===================================================\n\n');
+
+%% 3. 전달함수(Transfer Function) 생성
+% [공통] 분자 항 (DC Gain 관련)
+num = (G * Kt) / (J * R);
+
+% Case 1: D = 0 (이상적인 최악의 조건 - 설계 기준)
+D1 = 0;
+den1 = [1, (D1/J) + (G^2 * Kt * Kb)/(J * R), K/J];
+sys1 = tf(num, den1);
+
+% Case 2: D = 0.0001 (실제 윤활유 마찰이 존재하는 조건)
+D2 = 0.0005;
+den2 = [1, (D2/J) + (G^2 * Kt * Kb)/(J * R), K/J];
+sys2 = tf(num, den2);
+
+%% 4. 스텝 응답 시뮬레이션 및 그래프 출력
+t = 0:0.001:0.3; % 0초부터 0.3초까지 0.001초 간격으로 시뮬레이션
+
+figure('Name', 'ETC System Step Response', 'Position', [100, 100, 700, 800]);
+
+% --- 상단 그래프 (D=0) ---
+subplot(2,1,1);
+step(sys1, t);
+title('ETC Step Response (Design Assumption: D = 0)', 'FontSize', 12);
+ylabel('Throttle Angle');
+grid on;
+
+% --- 하단 그래프 (D=0.0001) ---
+subplot(2,1,2);
+step(sys2, t);
+title('ETC Step Response (Realistic Condition: D = 0.0001)', 'FontSize', 12);
+xlabel('Time (seconds)');
+ylabel('Throttle Angle');
+grid on;
+
+
+% 오차 밴드를 2%로 명시적으로 설정하여 stepinfo 추출
+info1 = stepinfo(sys1, 'SettlingTimeThreshold', 0.02);
+info2 = stepinfo(sys2, 'SettlingTimeThreshold', 0.02);
+
+fprintf('[시뮬레이션 결과 1: D = 0 일 때]\n');
+fprintf(' - Overshoot      : %.4f %%\n', info1.Overshoot);
+fprintf(' - Settling Time  : %.4f sec\n\n', info1.SettlingTime);
+
+fprintf('[시뮬레이션 결과 2: D = 0.0001 일 때]\n');
+fprintf(' - Overshoot      : %.4f %%\n', info2.Overshoot);
+fprintf(' - Settling Time  : %.4f sec\n', info2.SettlingTime);
